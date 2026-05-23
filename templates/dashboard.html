@@ -15,7 +15,44 @@
 
         <!-- LOGIN / SETUP (заглушки) -->
         <div id="screen-login" class="screen hidden p-6"><h1>Login</h1></div>
-        <div id="screen-setup" class="screen hidden p-6"><h1>Setup</h1></div>
+        <!-- НОВЫЙ ЭКРАН АНКЕТЫ -->
+        <div id="screen-setup" class="screen p-6 flex flex-col h-full overflow-y-auto">
+            <h1 class="text-xl font-bold text-center mb-6" style="color: var(--dark);">Давай настроим копилку 🔧</h1>
+            
+            <label class="block text-sm font-medium mb-1" style="color: var(--dark);">Название цели</label>
+            <input type="text" id="setup_goal_name" placeholder="Например: Новая машина" class="w-full p-2 rounded-xl mb-4 border" style="border-color: var(--light-gray);" value="Моя цель">
+
+            <label class="block text-sm font-medium mb-1" style="color: var(--dark);">Сумма цели (₽)</label>
+            <input type="number" id="setup_goal_target" class="w-full p-2 rounded-xl mb-4 border" style="border-color: var(--light-gray);" value="100000">
+
+            <label class="block text-sm font-medium mb-1" style="color: var(--dark);">Дата дедлайна</label>
+            <input type="date" id="setup_goal_deadline" class="w-full p-2 rounded-xl mb-4 border" style="border-color: var(--light-gray);" value="2027-01-10">
+
+            <label class="block text-sm font-medium mb-1" style="color: var(--dark);">Автопополнение</label>
+            <select id="setup_autotopup" class="w-full p-2 rounded-xl mb-4 border" style="border-color: var(--light-gray);">
+                <option value="none">Отключено</option>
+                <option value="percentOfExpense">% от расходов</option>
+                <option value="percentOfIncome">% от доходов</option>
+                <option value="percentOfBalance">% от остатка</option>
+            </select>
+
+            <!-- Поля с серыми подписями -->
+            <label class="block text-xs text-gray-400">Какой процент отчислять</label>
+            <input type="number" id="setup_autotopup_percent" placeholder="Процент" class="w-full p-2 rounded-xl border mb-3" style="border-color: var(--light-gray);" value="10">
+
+            <label class="block text-xs text-gray-400">Но не больше, чем (₽)</label>
+            <input type="number" id="setup_autotopup_max" placeholder="Не более" class="w-full p-2 rounded-xl border mb-4" style="border-color: var(--light-gray);" value="5000">
+
+            <label class="block text-sm font-medium mb-1" style="color: var(--dark);">Стиль уведомлений</label>
+            <div class="flex flex-wrap gap-2 mb-6">
+                <label class="flex items-center gap-1"><input type="radio" name="setup_style" value="friendly" checked> Дружелюбный</label>
+                <label class="flex items-center gap-1"><input type="radio" name="setup_style" value="business"> Деловой</label>
+                <label class="flex items-center gap-1"><input type="radio" name="setup_style" value="motivational"> Мотивирующий</label>
+                <label class="flex items-center gap-1"><input type="radio" name="setup_style" value="toxic"> Токсичный</label>
+            </div>
+
+            <button id="finish_setup_btn" class="w-full py-3 rounded-xl font-bold text-lg mb-4" style="background-color: var(--brandRed); color: var(--bg);">Начать пользоваться 🚀</button>
+        </div>
 
         <!-- LIMITS -->
         <div id="screen-limits" class="screen hidden px-6 pb-6 pt-3 flex flex-col h-full">
@@ -28,9 +65,19 @@
 
         <!-- HOME -->
         <div id="screen-home" class="screen p-6 flex flex-col h-full">
-            <div class="flex justify-between items-center mb-2 flex-shrink-0">
+            <!-- <div class="flex justify-between items-center mb-2 flex-shrink-0">
                 <span class="text-2xl font-bold" style="color: var(--dark);">Накопилка</span>
                 <button id="notifications_button" class="w-8 h-8 rounded-lg flex items-center justify-center" style="color: var(--dark);">🔔</button>
+            </div> -->
+            <div class="flex justify-between items-center mb-2 flex-shrink-0">
+                <span class="text-2xl font-bold" style="color: var(--dark);">Накопилка</span>
+                <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-1 bg-yellow-100 px-2 py-1 rounded-full">
+                        <span class="text-lg">🔥</span>
+                        <span id="streak_counter" class="text-sm font-bold" style="color: var(--dark);">0</span>
+                    </div>
+                    <button id="notifications_button" class="w-8 h-8 rounded-lg flex items-center justify-center" style="color: var(--dark);">📊</button>
+                </div>
             </div>
             <div class="flex justify-center mb-4 flex-shrink-0">
                 <button id="limits_button" class="relative w-60 h-60 rounded-full overflow-hidden border-none bg-transparent cursor-pointer p-0 flex items-center justify-center" style="clip-path: circle(50% at 50% 50%);">
@@ -65,7 +112,7 @@
             <div class="flex-shrink-0">
                 <p class="text-xs mb-1" style="color: var(--gray);"><span id="goal_name">Цель</span>: <span id="goal_percent">0%</span></p>
                 <button id="goal_progress_button" class="w-full h-4 rounded-full overflow-hidden border-none p-0 cursor-pointer transition-all duration-200 hover:opacity-80" style="background-color: var(--lighter-gray);">
-                    <div id="goal_fill" class="h-full w-0 rounded-full" style="background-color: var(--brandRed); transition: width 0.3s ease;"></div>
+                    <div id="goal_fill" class="h-full w-0 rounded-full" style="background-color: var(--green); transition: width 0.3s ease;"></div>
                 </button>
             </div>
         </div>
@@ -127,36 +174,27 @@
         <!-- FRIENDS -->
         <div id="screen-friends" class="screen hidden p-6 flex flex-col h-full">
             {% include 'components/back_button.html' %}
-            <h2 class="text-lg font-bold mb-4" style="color: var(--dark);">Друзья</h2>
-            <div class="rounded-xl p-4 mb-4" style="background-color: var(--lighter-gray);">
-                <p class="font-bold mb-2" style="color: var(--dark);">🏆 Кто накопит быстрее</p>
-                <p style="color: var(--dark);">Вы: <span id="challenge_your_progress">0₽</span></p>
-                <p style="color: var(--dark);">Друг: <span id="challenge_friend_progress">0₽</span></p>
-                <p class="mt-1 font-semibold" id="challenge_leader" style="color: var(--dark);">Лидирует: --</p>
+            <h2 class="text-lg font-bold mb-4" style="color: var(--dark);">🏆 Челленджи</h2>
+            
+            <div id="challenges_list" class="flex-grow overflow-y-auto space-y-3">
+                <!-- Динамически заполняется из JS -->
             </div>
-            <div class="rounded-xl p-4" style="background-color: var(--lighter-gray);">
-                <p class="font-bold mb-2" style="color: var(--dark);">✈️ <span id="joint_goal_name">Совместная цель</span></p>
-                <p style="color: var(--dark);">Цель: <span id="joint_target">100 000 ₽</span></p>
-                <p style="color: var(--dark);">Собрано: <span id="joint_saved">0 ₽</span></p>
-                <div class="flex gap-2 mt-2">
-                    <button id="joint_deposit_btn" class="flex-1 h-10 rounded-xl text-sm" style="background-color: var(--dark); color: var(--bg);">Внести</button>
-                    <button id="joint_withdraw_btn" class="flex-1 h-10 rounded-xl text-sm" style="background-color: var(--dark); color: var(--bg);">Вывести</button>
-                </div>
-            </div>
+            
+            <button id="add_challenge_btn" class="mt-4 w-full py-2 rounded-xl font-bold" style="background-color: var(--lighter-gray); color: var(--dark);">+ Добавить челлендж (демо)</button>
         </div>
 
         <!-- NOTIFICATIONS -->
         <div id="screen-notifications" class="screen hidden p-6 flex flex-col h-full">
             {% include 'components/back_button.html' %}
-            <h2 class="text-lg font-bold mb-4" style="color: var(--dark);">Уведомления</h2>
+            <h2 class="text-lg font-bold mb-4" style="color: var(--dark);">Статистика и уведомления</h2>
             <div id="notifications_list" class="flex-grow overflow-y-auto space-y-3"></div>
         </div>
 
-        <div class="absolute bottom-0 left-0 right-0 flex justify-around py-2 bg-white border-t border-gray-200" id="bottom_nav">
+        <div id="bottom_nav" class="absolute bottom-0 left-0 right-0 flex justify-around py-2 bg-white border-t border-gray-200 hidden">
         <button class="nav-btn text-xs font-medium" data-screen="screen-home" style="color: var(--dark);">🏠 Дом</button>
         <button class="nav-btn text-xs font-medium" data-screen="screen-limits" style="color: var(--dark);">📊 Лимиты</button>
         <button class="nav-btn text-xs font-medium" data-screen="screen-calendar" style="color: var(--dark);">📅 Напомин.</button>
-        <button class="nav-btn text-xs font-medium" data-screen="screen-friends" style="color: var(--dark);">👥 Друзья</button>
+        <button class="nav-btn text-xs font-medium" data-screen="screen-friends" style="color: var(--dark);">🏆 Челленджи</button>
         <button class="nav-btn text-xs font-medium" data-screen="screen-goals" style="color: var(--dark);">🎯 Цель</button>
         </div>
 
@@ -349,7 +387,7 @@
     </div>
 
     <!-- Чат-анкета (оверлей на весь экран) -->
-    <div id="questionnaire_overlay" class="fixed inset-0 z-50 hidden" style="background-color: var(--bg);">
+    <!-- <div id="questionnaire_overlay" class="fixed inset-0 z-50 hidden" style="background-color: var(--bg);">
         <div class="w-full h-full flex flex-col p-4">
             <div id="chat_history" class="flex-grow overflow-y-auto mb-3 space-y-2 pr-1" style="color: var(--dark);"></div>
             <div id="chat_input_area" class="flex-shrink-0 flex items-end gap-2">
@@ -359,7 +397,7 @@
                 <button id="chat_send_btn" class="hidden h-10 w-10 rounded-xl flex items-center justify-center" style="background-color: var(--brandRed); color: var(--bg);">→</button>
             </div>
         </div>
-    </div>
+    </div> -->
 
     <!-- Кнопка тестирования (огромная, с белой рамкой) -->
     <button id="debug_toggle" class="fixed top-1/2 left-4 transform -translate-y-1/2 z-[60] w-10 h-10 bg-gray-700 text-white rounded-full flex items-center justify-center text-3xl shadow-lg border-2 border-white">🛠️</button>

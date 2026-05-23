@@ -3,7 +3,7 @@ const DEFAULT_USER_DATA = {
   setupCompleted: false,
   communicationStyle: 'friendly',
   personalBalance: 100000,
-  monthlyIncome: 0,
+  monthlyIncome: 100000,
   totalSpent: 0,
   monthlySpent: 0,
   monthlyProgress: 0,
@@ -17,7 +17,16 @@ const DEFAULT_USER_DATA = {
     interestRate: 13.5
   },
   categoriesLimits: [
-    { id: 0, limit: 0, spent: 0 } // "Потрачено"
+    { id: 2, limit: 0, spent: 0 },   // кафе
+    { id: 3, limit: 0, spent: 0 },   // развлечения
+    { id: 4, limit: 0, spent: 0 },   // одежда
+    { id: 9, limit: 0, spent: 0 },   // транспорт
+    { id: 0, limit: 0, spent: 0 }    // "Потрачено"
+  ],
+  challengesList: [
+      { id: 1, name: 'Потрать на кафе меньше 5000₽', target: 5000, current: 0, unit: '₽', categoryId: 2 },
+      { id: 2, name: 'Потрать на развлечения меньше 5000₽', target: 5000, current: 0, unit: '₽', categoryId: 2 },
+      { id: 3, name: 'Не превысь лимит транспорта', target: 1, current: 0, unit: 'месяц', categoryId: 9 }
   ],
   autoTopUp: {
       expenseEnabled: false,
@@ -35,20 +44,83 @@ const DEFAULT_USER_DATA = {
     jointGoal: { name: 'Совместная цель', target: 100000, saved: 0 }
   },
   lastMonthStats: null,
-  lastMonthReset: new Date().toISOString()
+  lastMonthReset: new Date().toISOString(),
+  streakMonths: 0,             // новый счётчик ударного режима
+  hasExceededThisMonth: false    // флаг превышения в текущем месяце
 };
 
 function loadUserData() {
   const raw = localStorage.getItem('userData');
+  let data = { ...DEFAULT_USER_DATA };
   if (raw) {
-    try { return JSON.parse(raw); }
-    catch (e) { return { ...DEFAULT_USER_DATA }; }
+    try {
+      const parsed = JSON.parse(raw);
+      data = deepMerge(data, parsed);  // <-- глубокое слияние
+    } catch (e) {}
   }
-  return { ...DEFAULT_USER_DATA };
+  return data;
 }
 
 function saveUserData(data) {
   localStorage.setItem('userData', JSON.stringify(data));
+}
+
+function deepMerge(target, source) {
+  const output = { ...target };
+  for (const key of Object.keys(source)) {
+    if (
+      source[key] &&
+      typeof source[key] === 'object' &&
+      !Array.isArray(source[key]) &&
+      target[key] &&
+      typeof target[key] === 'object'
+    ) {
+      output[key] = deepMerge(target[key], source[key]);
+    } else {
+      output[key] = source[key];
+    }
+  }
+  return output;
+}
+
+// Новая функция – завершение анкеты
+function completeSetup() {
+  const name = document.getElementById('setup_goal_name').value.trim() || 'Моя цель';
+  const target = parseFloat(document.getElementById('setup_goal_target').value);
+  const deadline = document.getElementById('setup_goal_deadline').value;
+  const autoType = document.getElementById('setup_autotopup').value;
+  const percent = parseFloat(document.getElementById('setup_autotopup_percent').value) || 0;
+  const maxAmount = parseFloat(document.getElementById('setup_autotopup_max').value) || 0;
+  const style = document.querySelector('input[name="setup_style"]:checked')?.value || 'friendly';
+
+  if (isNaN(target) || target <= 0) {
+    alert('Введите корректную сумму цели');
+    return;
+  }
+
+  let ud = loadUserData();
+  ud.communicationStyle = style;
+  ud.goal.name = name;
+  ud.goal.target = target;
+  ud.goal.deadline = deadline;
+  ud.autoTopUp.expenseEnabled = (autoType === 'percentOfExpense');
+  ud.autoTopUp.incomeEnabled = (autoType === 'percentOfIncome');
+  ud.autoTopUp.balanceEnabled = (autoType === 'percentOfBalance');
+  ud.autoTopUp.percent = percent;
+  ud.autoTopUp.maxAmount = maxAmount;
+
+  // === Только четыре изначальные категории ===
+  ud.categoriesLimits = [
+    { id: 2, limit: Math.floor(target / 4), spent: 0 },   // Кафе
+    { id: 3, limit: Math.floor(target / 5), spent: 0 },   // Развлечения
+    { id: 4, limit: Math.floor(target / 4), spent: 0 },   // Одежда
+    { id: 9, limit: Math.floor(target / 10 * 3), spent: 0 },   // Транспорт
+    { id: 0, limit: 0, spent: 0 }                         // Потрачено
+  ];
+
+  ud.setupCompleted = true;
+  saveUserData(ud);
+  location.reload();   // ← автоматическая перезагрузка, всё подхватится
 }
 
 // ========== КОНФИГИ КАТЕГОРИЙ ==========
@@ -83,12 +155,24 @@ function getCategoryColor(id) {
 function switchScreen(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
   document.getElementById(screenId).classList.remove('hidden');
+
+  const bottomNav = document.getElementById('bottom_nav');
+  if (bottomNav) {
+    // Скрываем только на экране анкеты
+    if (screenId === 'screen-setup') {
+      bottomNav.classList.add('hidden');
+    } else {
+      bottomNav.classList.remove('hidden');
+    }
+  }
+
   if (screenId === 'screen-calendar') renderCalendarEvents();
   if (screenId === 'screen-home') { updateHomeStrip(); updateFinanceBlocks(); drawWheel(); }
   if (screenId === 'screen-limits') renderLimitsList();
   if (screenId === 'screen-goals') { updateGoalsScreen(); checkGoalAchievement(); }
   if (screenId === 'screen-notifications') renderNotifications();
-  if (screenId === 'screen-friends') updateFriendsScreen();
+  // if (screenId === 'screen-friends') updateFriendsScreen();
+  if (screenId === 'screen-friends') { renderChallenges(); }
 }
 
 // ========== ГЛАВНЫЙ ЭКРАН ==========
@@ -120,6 +204,7 @@ function updateFinanceBlocks() {
   progressEl.textContent = (diff >= 0 ? '+' : '') + diff.toFixed(1) + '%';
   progressEl.style.color = diff >= 0 ? 'var(--green)' : 'var(--brandRed)';
   document.getElementById('target_date').textContent = g.deadline ? new Date(g.deadline).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '--';
+  document.getElementById('streak_counter').innerText = ud.streakMonths || 0;
 }
 
 // ========== КОЛЕСО ЛИМИТОВ ==========
@@ -585,37 +670,85 @@ function updateFriendsScreen() {
   document.getElementById('joint_saved').textContent = ud.challenges.jointGoal.saved.toLocaleString() + ' ₽';
 }
 
+function renderChallenges() {
+    const ud = loadUserData();
+    const container = document.getElementById('challenges_list');
+    if (!container) return;
+    const list = ud.challengesList || [];
+    if (list.length === 0) {
+        container.innerHTML = '<p class="text-center text-sm" style="color: var(--gray);">Нет активных челленджей</p>';
+        return;
+    }
+    container.innerHTML = list.map(ch => {
+        const percent = (ch.current / ch.target) * 100;
+        return `
+            <div class="rounded-xl p-3" style="background-color: var(--lighter-gray);">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="font-medium" style="color: var(--dark);">${ch.name}</span>
+                    <span class="text-xs" style="color: var(--gray);">${ch.current} / ${ch.target} ${ch.unit}</span>
+                </div>
+                <div class="w-full h-2 rounded-full overflow-hidden" style="background-color: var(--light-gray);">
+                    <div class="h-full rounded-full" style="background-color: var(--green); width: ${Math.min(100, percent)}%;"></div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Обработчики для кнопок прогресса
+    document.querySelectorAll('.challenge-progress-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = parseInt(btn.dataset.id);
+            let ud = loadUserData();
+            const ch = ud.challengesList.find(c => c.id === id);
+            if (ch) {
+                const add = prompt(`На сколько увеличить прогресс для "${ch.name}"?`, "1000");
+                if (add && !isNaN(parseFloat(add))) {
+                    ch.current += parseFloat(add);
+                    if (ch.current > ch.target) ch.current = ch.target;
+                    saveUserData(ud);
+                    renderChallenges();
+                    // Если цель достигнута – уведомление
+                    if (ch.current >= ch.target) {
+                        alert(`🎉 Поздравляем! Челлендж "${ch.name}" выполнен!`);
+                    }
+                }
+            }
+        });
+    });
+}
+
 // Совместная копилка: открыть модалку
-function openJointTransactionModal(type) {
-  const ud = loadUserData();
-  document.getElementById('joint_transaction_type').value = type;
-  document.getElementById('joint_balance_info').textContent = type === 'deposit' 
-    ? 'Ваш баланс: ' + ud.personalBalance.toLocaleString() + ' ₽ (неограничен)' 
-    : 'В копилке: ' + ud.challenges.jointGoal.saved.toLocaleString() + ' ₽';
-  document.getElementById('joint_amount_input').value = '';
-  document.getElementById('joint_transaction_modal').classList.remove('hidden');
-}
-function closeJointTransactionModal() { document.getElementById('joint_transaction_modal').classList.add('hidden'); }
-function performJointTransaction() {
-  const type = document.getElementById('joint_transaction_type').value;
-  const amount = parseFloat(document.getElementById('joint_amount_input').value);
-  if (isNaN(amount) || amount <= 0) return alert('Введите сумму');
-  let ud = loadUserData();
-  if (type === 'deposit') {
-    ud.personalBalance -= amount;
-    ud.challenges.jointGoal.saved += amount;
-  } else {
-    if (ud.challenges.jointGoal.saved < amount) return alert('Недостаточно средств в копилке');
-    ud.challenges.jointGoal.saved -= amount;
-    ud.personalBalance += amount;
-  }
-  saveUserData(ud);
-  if (ud.challenges.jointGoal.saved >= ud.challenges.jointGoal.target) {
-    document.getElementById('joint_goal_achieved_modal').classList.remove('hidden');
-  }
-  updateFriendsScreen();
-  closeJointTransactionModal();
-}
+// function openJointTransactionModal(type) {
+//   const ud = loadUserData();
+//   document.getElementById('joint_transaction_type').value = type;
+//   document.getElementById('joint_balance_info').textContent = type === 'deposit' 
+//     ? 'Ваш баланс: ' + ud.personalBalance.toLocaleString() + ' ₽ (неограничен)' 
+//     : 'В копилке: ' + ud.challenges.jointGoal.saved.toLocaleString() + ' ₽';
+//   document.getElementById('joint_amount_input').value = '';
+//   document.getElementById('joint_transaction_modal').classList.remove('hidden');
+// }
+// function closeJointTransactionModal() { document.getElementById('joint_transaction_modal').classList.add('hidden'); }
+// function performJointTransaction() {
+//   const type = document.getElementById('joint_transaction_type').value;
+//   const amount = parseFloat(document.getElementById('joint_amount_input').value);
+//   if (isNaN(amount) || amount <= 0) return alert('Введите сумму');
+//   let ud = loadUserData();
+//   if (type === 'deposit') {
+//     ud.personalBalance -= amount;
+//     ud.challenges.jointGoal.saved += amount;
+//   } else {
+//     if (ud.challenges.jointGoal.saved < amount) return alert('Недостаточно средств в копилке');
+//     ud.challenges.jointGoal.saved -= amount;
+//     ud.personalBalance += amount;
+//   }
+//   saveUserData(ud);
+//   if (ud.challenges.jointGoal.saved >= ud.challenges.jointGoal.target) {
+//     document.getElementById('joint_goal_achieved_modal').classList.remove('hidden');
+//   }
+//   updateFriendsScreen();
+//   closeJointTransactionModal();
+// }
 
 // ========== УВЕДОМЛЕНИЯ ==========
 function renderNotifications() {
@@ -719,7 +852,7 @@ function performTestSpend() {
       const newSpent = cat.spent + amount;
       if (cat.limit > 0 && newSpent > cat.limit) {
         // Показываем предупреждение в стиле общения
-        showLimitWarning(cat, amount, ud.communicationStyle);
+        showLimitWarning(ud, cat, amount, ud.communicationStyle);
       }
       cat.spent = newSpent;
     } else if (getCategoryById(catId)) {
@@ -741,7 +874,9 @@ function performTestSpend() {
   alert('Расход учтён');
 }
 
-function showLimitWarning(cat, amount, style) {
+function showLimitWarning(ud, cat, amount, style) {
+  ud.hasExceededThisMonth = true;
+  saveUserData(ud);
   const cfg = getCategoryById(cat.id);
   const limit = cat.limit;
   const spent = cat.spent;
@@ -795,6 +930,14 @@ function debugNewMonth() {
     progressDiff: progressDiff   // ← сохраняем прогресс
   };
   
+  // 3. Обновление ударного режима
+  if (!ud.hasExceededThisMonth) {
+    ud.streakMonths = (ud.streakMonths || 0) + 1;
+  } else {
+    ud.streakMonths = 0;
+  }
+  ud.hasExceededThisMonth = false;   // сбрасываем флаг для нового месяца
+
   // 3. Обновляем prevGoalPercent для следующего месяца
   ud.prevGoalPercent = currentPercent;
   
@@ -815,6 +958,7 @@ function debugNewMonth() {
       read: false,
       type: 'monthly_stats'
     });
+  
   }
   
   saveUserData(ud);
@@ -1004,8 +1148,72 @@ function finishQuestionnaire() {
 // ========== ГЛОБАЛЬНЫЕ ОБРАБОТЧИКИ ==========
 document.addEventListener('DOMContentLoaded', () => {
   const ud = loadUserData();
-  if (!ud.setupCompleted) { startQuestionnaire(); return; }
 
+  // ====== ОТЛАДКА – работает всегда, даже на экране анкеты ======
+  // Открытие/закрытие панели
+  document.getElementById('debug_toggle')?.addEventListener('click', toggleDebugPanel);
+  // Кнопки внутри дебаг-панели (если панель уже в DOM)
+  document.getElementById('debug_add_money')?.addEventListener('click', debugAddMoney);
+  document.getElementById('debug_spend_money')?.addEventListener('click', debugSpendMoney);
+  document.getElementById('debug_reset')?.addEventListener('click', debugResetAll);
+  document.getElementById('debug_new_month')?.addEventListener('click', debugNewMonth);
+  document.getElementById('spend_confirm_btn')?.addEventListener('click', performTestSpend);
+  document.getElementById('monthly_stats_close')?.addEventListener('click', () => document.getElementById('monthly_stats_modal').classList.add('hidden'));
+  document.getElementById('monthly_stats_modal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) document.getElementById('monthly_stats_modal').classList.add('hidden'); });
+
+  // Перетаскивание кнопки отладки
+  const debugBtn = document.getElementById('debug_toggle');
+  if (debugBtn) {
+    let isDragging = false, startX, startY, initialLeft, initialTop;
+
+    function startDrag(e) {
+      e.preventDefault();
+      isDragging = true;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const rect = debugBtn.getBoundingClientRect();
+      startX = clientX;
+      startY = clientY;
+      initialLeft = rect.left;
+      initialTop = rect.top;
+      window.addEventListener('mousemove', onDrag);
+      window.addEventListener('mouseup', stopDrag);
+      window.addEventListener('touchmove', onDrag, { passive: false });
+      window.addEventListener('touchend', stopDrag);
+    }
+
+    function onDrag(e) {
+      if (!isDragging) return;
+      e.preventDefault();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+      debugBtn.style.left = (initialLeft + dx) + 'px';
+      debugBtn.style.top = (initialTop + dy) + 'px';
+    }
+
+    function stopDrag() {
+      isDragging = false;
+      window.removeEventListener('mousemove', onDrag);
+      window.removeEventListener('mouseup', stopDrag);
+      window.removeEventListener('touchmove', onDrag);
+      window.removeEventListener('touchend', stopDrag);
+    }
+
+    debugBtn.addEventListener('mousedown', startDrag);
+    debugBtn.addEventListener('touchstart', startDrag, { passive: false });
+  }
+
+  if (!ud.setupCompleted) {
+      switchScreen('screen-setup');
+      document.getElementById('finish_setup_btn').addEventListener('click', completeSetup);
+      return;
+  } else {
+      switchScreen('screen-home');
+      document.getElementById('bottom_nav')?.classList.remove('hidden'); // покажем панель
+  }
+  
   document.getElementById('limits_button')?.addEventListener('click', () => switchScreen('screen-limits'));
   document.getElementById('calendar_strip')?.addEventListener('click', () => switchScreen('screen-calendar'));
   document.getElementById('add_event_btn')?.addEventListener('click', openCreateModal);
@@ -1021,11 +1229,21 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('confirm_category_btn')?.addEventListener('click', confirmCategorySelection);
   document.getElementById('category_select_modal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) closeCategorySelectModal(); });
   
+  // document.getElementById('back_button')?.addEventListener('click', () => {
+  //     console.log('Back button clicked directly');  // временный лог
+  //     switchScreen('screen-home');
+  // });
+
   document.addEventListener('click', (e) => {
-    if (e.target.closest('#back_button')) switchScreen('screen-home');
-    if (e.target.closest('.limit-item')) {
-      const id = parseInt(e.target.closest('.limit-item').dataset.id);
-      if (id !== 0) openLimitModal(false, id);
+    if (e.target.closest('#back_button')) {
+      switchScreen('screen-home');
+    }
+    const panel = document.getElementById('debug_panel');
+    const toggle = document.getElementById('debug_toggle');
+    if (!panel || panel.classList.contains('hidden')) return;
+    // Если кликнули НЕ по панели и НЕ по кнопке-триггеру – скрываем
+    if (!panel.contains(e.target) && e.target !== toggle) {
+      panel.classList.add('hidden');
     }
   });
 
@@ -1034,8 +1252,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const screen = btn.dataset.screen;
       switchScreen(screen);
     });
+    
+
+    
   });
 
+  // document.getElementById('back_button')?.addEventListener('click', () => switchScreen('screen-home'));
   document.getElementById('goal_progress_button')?.addEventListener('click', () => switchScreen('screen-goals'));
   document.getElementById('edit_goal_name_btn')?.addEventListener('click', openEditGoalModal);
   document.getElementById('save_goal_btn')?.addEventListener('click', saveGoalChanges);
@@ -1056,11 +1278,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('style_save')?.addEventListener('click', saveCommunicationStyle);
   document.getElementById('style_modal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) closeStyleModal(); });
 
-  document.getElementById('joint_deposit_btn')?.addEventListener('click', () => openJointTransactionModal('deposit'));
-  document.getElementById('joint_withdraw_btn')?.addEventListener('click', () => openJointTransactionModal('withdraw'));
-  document.getElementById('joint_transaction_confirm')?.addEventListener('click', performJointTransaction);
-  document.getElementById('joint_transaction_close')?.addEventListener('click', closeJointTransactionModal);
-  document.getElementById('joint_transaction_modal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) closeJointTransactionModal(); });
+  // document.getElementById('joint_deposit_btn')?.addEventListener('click', () => openJointTransactionModal('deposit'));
+  // document.getElementById('joint_withdraw_btn')?.addEventListener('click', () => openJointTransactionModal('withdraw'));
+  // document.getElementById('joint_transaction_confirm')?.addEventListener('click', performJointTransaction);
+  // document.getElementById('joint_transaction_close')?.addEventListener('click', closeJointTransactionModal);
+  // document.getElementById('joint_transaction_modal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) closeJointTransactionModal(); });
 
   document.getElementById('notifications_button')?.addEventListener('click', () => switchScreen('screen-notifications'));
 
@@ -1068,20 +1290,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('new_joint_goal_btn')?.addEventListener('click', startNewJointGoal);
 
   document.getElementById('save_joint_goal_btn')?.addEventListener('click', saveJointGoalChanges);
-  // document.getElementById('cancel_joint_goal_btn')?.addEventListener('click', () => {
-  //     document.getElementById('edit_joint_goal_modal').classList.add('hidden');
-  // });
 
-  // document.getElementById('edit_joint_goal_modal')?.addEventListener('click', (e) => {
-  //     if (e.target === e.currentTarget) document.getElementById('edit_joint_goal_modal').classList.add('hidden');
-  // });
-    // Закрытие модалки достижения совместной цели
-  // document.getElementById('close_joint_goal_modal')?.addEventListener('click', () => {
-  //     document.getElementById('joint_goal_achieved_modal').classList.add('hidden');
-  // });
-  // document.getElementById('joint_goal_achieved_modal')?.addEventListener('click', (e) => {
-  //     if (e.target === e.currentTarget) document.getElementById('joint_goal_achieved_modal').classList.add('hidden');
-  // });
   document.getElementById('goal_achieved_modal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) document.getElementById('goal_achieved_modal').classList.add('hidden'); });
   document.getElementById('close_test_spend')?.addEventListener('click', () => {
       document.getElementById('test_spend_panel').classList.add('hidden');
@@ -1095,55 +1304,5 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.target === e.currentTarget) document.getElementById('limit_warning_modal').classList.add('hidden');
   });
 
-  document.getElementById('debug_toggle')?.addEventListener('click', toggleDebugPanel);
-  document.getElementById('debug_add_money')?.addEventListener('click', debugAddMoney);
-  document.getElementById('debug_spend_money')?.addEventListener('click', debugSpendMoney);
-  document.getElementById('debug_reset')?.addEventListener('click', debugResetAll);
-  document.getElementById('debug_new_month')?.addEventListener('click', debugNewMonth);
-  document.getElementById('spend_confirm_btn')?.addEventListener('click', performTestSpend);
-  document.getElementById('monthly_stats_close')?.addEventListener('click', () => document.getElementById('monthly_stats_modal').classList.add('hidden'));
-  document.getElementById('monthly_stats_modal')?.addEventListener('click', (e) => { if (e.target === e.currentTarget) document.getElementById('monthly_stats_modal').classList.add('hidden'); });
-
   updateHomeStrip(); updateFinanceBlocks(); drawWheel(); renderLimitsList();
 });
-
-const debugBtn = document.getElementById('debug_toggle');
-let isDragging = false, startX, startY, initialLeft, initialTop;
-
-debugBtn.addEventListener('mousedown', startDrag);
-debugBtn.addEventListener('touchstart', startDrag, { passive: false });
-
-function startDrag(e) {
-  e.preventDefault();
-  isDragging = true;
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const rect = debugBtn.getBoundingClientRect();
-  startX = clientX;
-  startY = clientY;
-  initialLeft = rect.left;
-  initialTop = rect.top;
-  window.addEventListener('mousemove', onDrag);
-  window.addEventListener('mouseup', stopDrag);
-  window.addEventListener('touchmove', onDrag, { passive: false });
-  window.addEventListener('touchend', stopDrag);
-}
-
-function onDrag(e) {
-  if (!isDragging) return;
-  e.preventDefault();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const dx = clientX - startX;
-  const dy = clientY - startY;
-  debugBtn.style.left = (initialLeft + dx) + 'px';
-  debugBtn.style.top = (initialTop + dy) + 'px';
-}
-
-function stopDrag() {
-  isDragging = false;
-  window.removeEventListener('mousemove', onDrag);
-  window.removeEventListener('mouseup', stopDrag);
-  window.removeEventListener('touchmove', onDrag);
-  window.removeEventListener('touchend', stopDrag);
-}
